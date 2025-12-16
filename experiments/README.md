@@ -107,6 +107,7 @@ Format-Matters/
 │       ├── outputs/                    # Generated plots and analysis
 │       └── exp2_1M_run.log             # Execution log
 └── plots/                              # Paper figures
+    ├── generate_plots.py               # Script to generate all plots
     ├── plot1_image_throughput.png
     ├── plot2_image_storage.png
     ├── plot3_tabular_storage.png
