@@ -1,105 +1,119 @@
 # Format Matters: A Systems Characterization of Data Storage Formats for ML Training
 
-A comprehensive empirical study comparing data storage formats for PyTorch-based ML training pipelines.
+A comprehensive empirical study comparing data storage formats for ML training pipelines across image and tabular workloads.
 
-## Current Status: Phase 1 Complete - Expanding to Row vs Column Comparison
+## Status: ALL EXPERIMENTS COMPLETE ✓
 
-**Latest Update (Nov 2025)**: Successfully debugged and trained baseline models on all 4 row-oriented formats. Discovered that format choice has minimal impact on small-dataset CPU training (~3.5% performance difference). **Next phase**: Adding column-oriented formats (Parquet, HDF5) to compare row vs column access patterns.
+Both experiments have been completed and published. See the full paper in `../papers/` for detailed analysis.
 
 ---
 
 ## Project Overview
 
-This project systematically evaluates data storage formats for machine learning training, focusing on **systems-level performance characteristics**.
+This project systematically evaluates data storage formats for machine learning training, focusing on **systems-level performance characteristics** across two distinct workloads:
 
-### Phase 1: Row-Oriented Formats (COMPLETED)
-- **CSV + files** (baseline): Simple manifest with individual image files
-- **WebDataset**: TAR-based sharded format with optional compression
-- **TFRecord**: Google's serialized record format
-- **LMDB**: Lightning Memory-Mapped Database
+### Experiment 1: Image Classification (COMPLETED ✓)
+**Dataset:** CIFAR-10 (60,000 images)
+**Formats Tested:** CSV, WebDataset, TFRecord, LMDB (all row-oriented)
+**Key Finding:** At small scale (60K samples) on CPU, format choice has minimal impact on throughput (5.3% variance) due to computation bottlenecks. However, storage efficiency varies dramatically (544× between CSV manifest and LMDB).
 
-### Phase 2: Column-Oriented Formats (COMPLETED)
-- **Parquet**: Industry-standard columnar format
-- **Arrow/Feather**: In-memory columnar format
+### Experiment 2: Tabular ML (COMPLETED ✓)
+**Dataset:** American Express Default Prediction (1,000,000 rows, 187 features)
+**Formats Tested:** CSV, LMDB (row-oriented) vs Parquet, Feather (columnar)
+**Key Finding:** At larger scale (1M rows), columnar formats achieve 2.2-2.7× better compression and 4.8-6.2× faster loading. LMDB catastrophically underperforms (18.6× slower loading). Training time remains format-neutral (<0.3% variance).
 
 ---
 
-## Key Findings (Phase 1)
+## Key Findings Summary
 
-### Baseline Training Results (CIFAR-10, 3 Epochs, CPU)
+### Scale-Dependency of Format Impact
+- **Small datasets (60K):** Minimal throughput differences (5.3%), CPU-bound training masks format effects
+- **Large datasets (1M):** Substantial loading differences (6.2× speedup with columnar formats) as I/O costs grow
+- **Insight:** Format optimization benefits **loading**, not **training**, in CPU-bound scenarios
 
-| Format | Val Accuracy | Throughput | Peak Memory | Disk I/O | Status |
-|--------|--------------|------------|-------------|----------|--------|
-| **CSV** | 61.41% | 21.28 samples/s | 2439 MB | 0.05 MB/s | Working |
-| **TFRecord** | 58.42% | 21.20 samples/s | 2803 MB | 0.05 MB/s | Working |
-| **LMDB** | 59.79% | 21.53 samples/s | 2600 MB | 0.00 MB/s | Working |
-| **WebDataset** | 43.45% | 20.79 samples/s | 3688 MB | 0.13 MB/s | Has bug |
+### Format Performance by Modality
+
+**Image Data (Experiment 1):**
+| Format | Throughput | Storage | Best For |
+|--------|------------|---------|----------|
+| CSV | 21.28 s/s | 35 MB | Development, prototyping |
+| LMDB | 21.53 s/s | 19,070 MB | Random access workloads |
+| TFRecord | 21.20 s/s | 4,060 MB | TensorFlow ecosystems |
+| WebDataset | 20.46 s/s | 4,430 MB | Cloud streaming |
+
+**Tabular Data (Experiment 2):**
+| Format | Load Time | Storage | Compression | Best For |
+|--------|-----------|---------|-------------|----------|
+| **Feather** | 4.16s | 1,164 MB | 2.7× | Preprocessing/analysis |
+| **Parquet** | 5.45s | 1,452 MB | 2.2× | **Production ML (recommended)** |
+| CSV | 25.91s | 3,200 MB | 1.0× | Development, small scale |
+| LMDB | 480.93s | 11,444 MB | 1.1× | **Avoid for bulk ML** |
 
 ### Critical Insights
 
-1. **Format Doesn't Matter for Small Datasets + CPU Training**
-   - Only 3.5% throughput difference (20.79 - 21.53 samples/s)
-   - Training (forward/backward pass) dominates time, not data loading
-   - OS caching makes all formats effectively "in-memory"
+1. **Format-Neutral Model Accuracy**
+   - Exp 1: 58-61% validation accuracy (minimal variance)
+   - Exp 2: 87.17-87.19% validation accuracy (0.02% variance)
+   - Format affects I/O efficiency, NOT ML outcomes
 
-2. **Three Major Bugs Fixed**
-   - **Data duplication**: Case-insensitive filesystem caused 2x duplicate samples (100k instead of 50k)
-   - **Insufficient shuffle buffer**: 5k buffer on class-ordered data → increased to 50k
-   - **Data ordering**: Files naturally ordered by class → shuffled during build
+2. **LMDB is Workload-Dependent**
+   - Optimized for random key-value lookups, NOT sequential bulk reads
+   - 18.6× slower loading for tabular ML (1M rows)
+   - 544× storage overhead for images vs CSV manifests
+   - **Use only for:** RL experience replay, random sampling, item-level queries
+   - **Avoid for:** Full-dataset epoch iterations, sequential training
 
-3. **When Format WOULD Matter**
-   - GPU training (500-1000 samples/s → data loading becomes bottleneck)
-   - Large datasets (won't fit in RAM → disk I/O matters)
-   - Network storage (latency exposes format inefficiencies)
-   - Parallel loading (num_workers > 1 → format scalability matters)
+3. **Columnar Formats Excel for Tabular ML at Scale**
+   - Parquet: Best overall (16% faster end-to-end, 2.2× compression)
+   - Feather: Fastest loading (6.2×) but 15% slower training
+   - Only applicable to structured data, NOT images
 
-4. **Comprehensive Metrics Collection Verified**
-   - Throughput, epoch time, CPU utilization, memory usage, disk I/O
-   - Detailed time-series logs (~15k samples per run)
-   - Build time and storage efficiency tracked
+4. **CPU-Bound Training Masks Format Effects**
+   - Both experiments show <5.3% training time variance
+   - CPU utilization: 790-1444% (saturated)
+   - Format optimization benefits I/O, not computation
 
 ---
 
 ## Repository Structure
 
 ```
-format-matters/
-├── README.md                           # This file
-├── PROJECT_STATUS.md                   # Detailed status tracking
-├── FINAL_ANALYSIS.md                   # Phase 1 results analysis
-├── METRICS_AUDIT.md                    # Comprehensive metrics documentation
-├── DEBUG_FINDINGS.md                   # Bug investigation details
-├── RERUN_INSTRUCTIONS.md              # How to reproduce results
-├── env/
-│   └── requirements.txt                # Python dependencies
-├── data/
-│   ├── raw/                            # Original datasets
-│   │   ├── cifar10/                   # 50k train, 10k val
-│   │   └── imagenet-mini/             # (Optional)
-│   └── built/                          # Converted formats
-│       └── <dataset>/<format>/<variant>/
-├── runs/                               # Experiment results
-│   └── <timestamp>/
-│       ├── builds/summary.csv          # Build metrics
-│       └── train_baselines/
-│           ├── summary.csv             # Training summary
-│           └── *_metrics.csv           # Detailed time-series
-├── notebooks/
-│   ├── 00_env_setup_local.ipynb        # Environment setup
-│   ├── 01_prepare_datasets.ipynb       # Dataset preparation
-│   ├── 02_build_csv_manifest.ipynb     # CSV format builder
-│   ├── 03_build_webdataset.ipynb       # WebDataset builder
-│   ├── 04_build_tfrecord.ipynb         # TFRecord builder
-│   ├── 05_build_lmdb.ipynb             # LMDB builder
-│   ├── 10_common_utils.ipynb           # Shared utilities
-│   ├── 11_loader_csv.ipynb             # CSV dataloader
-│   ├── 12_loader_webdataset.ipynb      # WebDataset dataloader
-│   ├── 13_loader_tfrecord.ipynb        # TFRecord dataloader
-│   ├── 14_loader_lmdb.ipynb            # LMDB dataloader
-│   └── 20_train_baselines.ipynb        # Training experiments
-└── scripts/
-    ├── FIX_ALL_FORMATS.py              # Bug fix automation
-    └── verify_*.py                     # Verification scripts
+Format-Matters/
+├── papers/                             # Published paper and drafts
+│   ├── format_matters_1129_paper.md    # Full paper with all findings
+│   ├── format_matters_paper.tex        # LaTeX version
+│   └── ...
+├── docs/                               # Presentation materials
+│   ├── presentation_slides.md
+│   ├── presentation_script.md
+│   └── presentation_qa.md
+├── experiments/                        # THIS DIRECTORY
+│   ├── README.md                       # This file
+│   ├── requirements.txt                # Python dependencies
+│   ├── exp1/                           # Image classification experiments
+│   │   ├── src/                        # Jupyter notebooks
+│   │   │   ├── 00_env_setup_*.ipynb
+│   │   │   ├── 01_prepare_datasets.ipynb
+│   │   │   ├── 02-05_build_*.ipynb     # Format builders
+│   │   │   ├── 10-14_loader_*.ipynb    # Dataloaders
+│   │   │   ├── 20_train_baselines.ipynb
+│   │   │   ├── 30-31_analysis_*.ipynb
+│   │   │   └── 40_decision_guide.ipynb
+│   │   └── runs/                       # Experiment results
+│   └── exp2/                           # Tabular ML experiments
+│       ├── src/                        # Source code
+│       │   └── run_exp2.py             # Main experiment script
+│       ├── runs/                       # Experiment results (renamed from logs)
+│       ├── outputs/                    # Generated plots and analysis
+│       └── exp2_1M_run.log             # Execution log
+└── plots/                              # Paper figures
+    ├── plot1_image_throughput.png
+    ├── plot2_image_storage.png
+    ├── plot3_tabular_storage.png
+    ├── plot4_tabular_loading.png
+    ├── plot5_training_accuracy.png
+    ├── plot6_end_to_end.png
+    └── plot7_scale_impact.png
 ```
 
 ---
@@ -108,194 +122,159 @@ format-matters/
 
 ### Prerequisites
 - Python 3.10+
-- ~5 GB disk space for CIFAR-10 experiments
+- 5-10 GB disk space (depends on experiments)
 - 8 GB RAM minimum
-- (Optional) NVIDIA GPU for GPU experiments
+- CPU-only (GPU experiments not included)
 
 ### Installation
 
 ```bash
-# Clone repository
-cd format-matters
+# Navigate to experiments directory
+cd experiments/
 
 # Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+python -m venv env
+source env/bin/activate  # Windows: env\Scripts\activate
 
 # Install dependencies
-pip install -r env/requirements.txt
-
-# Launch Jupyter
-jupyter notebook notebooks/
+pip install -r requirements.txt
 ```
 
 ### Running Experiments
 
+**Experiment 1 (Image Classification):**
 ```bash
-# 1. Prepare data
-Run: 01_prepare_datasets.ipynb
+# Navigate to exp1 source
+cd exp1/src/
 
-# 2. Build formats (run in order)
-Run: 02_build_csv_manifest.ipynb
-Run: 03_build_webdataset.ipynb
-Run: 04_build_tfrecord.ipynb
-Run: 05_build_lmdb.ipynb
+# Launch Jupyter
+jupyter notebook
 
-# 3. Train and compare
-Run: 20_train_baselines.ipynb
+# Run notebooks in order:
+# 1. 00_env_setup_local.ipynb
+# 2. 01_prepare_datasets.ipynb
+# 3. 02-05_build_*.ipynb (all format builders)
+# 4. 10-14_loader_*.ipynb (verify dataloaders)
+# 5. 20_train_baselines.ipynb (main experiment)
+# 6. 30-31_analysis_*.ipynb (results analysis)
 
-# 4. View results
-Check: runs/<latest>/train_baselines/summary.csv
-Read: FINAL_ANALYSIS.md
+# Results will be in exp1/runs/<timestamp>/
+```
+
+**Experiment 2 (Tabular ML):**
+```bash
+# Navigate to exp2 source
+cd exp2/src/
+
+# Run main experiment script
+python run_exp2.py
+
+# Results will be in exp2/runs/ and exp2/outputs/
 ```
 
 ---
 
 ## Datasets
 
-### CIFAR-10 (Current)
-- **Size**: 50,000 train, 10,000 validation
-- **Resolution**: 32×32 RGB
-- **Classes**: 10 (airplane, automobile, bird, cat, etc.)
-- **Use case**: Format validation, baseline comparison
+### Experiment 1: CIFAR-10
+- **Size:** 50,000 train + 10,000 validation (60,000 total)
+- **Resolution:** 32×32 RGB images
+- **Classes:** 10 (airplane, automobile, bird, cat, deer, dog, frog, horse, ship, truck)
+- **Download:** Automatic via torchvision.datasets
 
-### ImageNet-mini (Future)
-- **Size**: ~35,000 train, ~4,000 validation
-- **Resolution**: Variable (resized to 224×224)
-- **Use case**: Larger dataset testing
-
----
-
-## Experimental Design
-
-### Phase 1: Row-Oriented Formats (COMPLETED)
-
-**Formats Tested:**
-1. CSV + individual image files
-2. WebDataset (TAR shards, 256MB, no compression)
-3. TFRecord (shards, 256MB, no compression)
-4. LMDB (single database, no compression)
-
-**Training Configuration:**
-- Model: ResNet-18
-- Dataset: CIFAR-10
-- Epochs: 3
-- Batch size: 32
-- Workers: 0 (single-threaded)
-- Device: CPU
-- Augmentation: None (for fair comparison)
-
-**Metrics Collected:**
-- **Throughput**: Samples/second during training
-- **Epoch time**: Total seconds per epoch
-- **Validation accuracy**: Model performance
-- **CPU utilization**: Mean % during training
-- **Memory usage**: Peak RSS in MB
-- **Disk I/O**: Read/write MB/s
-- **Build time**: Seconds to build format
-- **Storage**: Bytes on disk
-
-### Phase 2: Row vs Column Comparison (PLANNED)
-
-**Approach:** Extract rich features from CIFAR-10 images
-- Color statistics (6 features)
-- Histograms (30 features)
-- Texture features (13 features)
-- Edge/shape features (10 features)
-- ResNet embeddings (512 features)
-- ViT embeddings (768 features)
-- **Total: ~1,340 features per image**
-
-**Column-Oriented Formats:**
-- Parquet (with Snappy compression)
-- HDF5 (columnar layout)
-- Feather (Arrow format)
-
-**Test Scenarios:**
-1. Load all features → Row format should win
-2. Load subset of features → Column format should win
-3. Feature engineering/selection → Column format should win significantly
-4. Add new features → Column format should win (append columns)
-
----
-
-## Key Metrics
-
-### Build Metrics
-- Build time (seconds)
-- Disk space (MB)
-- File count
-- Compression ratio (if applicable)
-
-### Runtime Metrics
-- Training throughput (samples/sec)
-- Epoch time (seconds)
-- First batch latency (seconds)
-- CPU utilization (%)
-- Memory usage (MB peak)
-- Disk I/O rates (MB/s)
-
-### Model Metrics
-- Training accuracy
-- Validation accuracy
-- Training loss
-- Validation loss
+### Experiment 2: American Express Default Prediction
+- **Size:** 1,000,000 rows sampled from full dataset
+- **Features:** 187 numeric features (after dropping categoricals)
+- **Target:** Binary classification (credit default)
+- **Source:** Kaggle competition dataset
+- **Preprocessing:** Stratified 80/20 split, median imputation for NaN values
 
 ---
 
 ## Technical Stack
 
-- **Framework**: PyTorch 2.3.1
-- **Row Formats**: webdataset, tfrecord, lmdb
-- **Column Formats**: pyarrow (Parquet), h5py (HDF5)
-- **Monitoring**: psutil (CPU/memory/disk)
-- **Analysis**: pandas, matplotlib, seaborn
-- **Environment**: Python 3.10+
+**Core Libraries:**
+- **Framework:** PyTorch 2.8.0 (Exp 1)
+- **ML:** scikit-learn (Exp 2)
+- **Data Processing:** pandas 2.2.2, numpy 1.26.4, pyarrow 16.1.0
+
+**Format Libraries:**
+- **Row-oriented:** webdataset 0.2.86, tfrecord 1.14.6, lmdb 1.5.1
+- **Columnar:** pyarrow (Parquet), pyarrow (Feather/Arrow IPC)
+- **Compression:** zstandard, lz4
+
+**Monitoring:**
+- **System:** psutil 5.9.8 (CPU, memory, disk I/O)
+- **Visualization:** matplotlib 3.8.4, seaborn
+
+**Environment:** Python 3.10+, Windows 11, AMD Ryzen 8-core @ 3.3 GHz
 
 ---
 
-## Documentation
+## Experimental Methodology
 
-- **README.md** (this file): Project overview
-- **PROJECT_STATUS.md**: Detailed completion tracking
-- **FINAL_ANALYSIS.md**: Phase 1 results and insights
-- **METRICS_AUDIT.md**: What metrics are collected and where
-- **DEBUG_FINDINGS.md**: Bug investigation and fixes
-- **RERUN_INSTRUCTIONS.md**: How to reproduce experiments
+### Experiment 1 Configuration
+- **Model:** ResNet-18 (pretrained=False)
+- **Optimizer:** SGD (lr=0.001, momentum=0.9, weight_decay=1e-4)
+- **Training:** 3 epochs, batch_size=64, num_workers=0
+- **Transforms:** Resize(224×224), ToTensor(), Normalize(ImageNet stats)
+- **Monitoring:** 0.5s intervals for CPU%, memory, disk I/O
 
----
-
-## Known Issues
-
-### WebDataset Loader Bug
-**Status**: Identified but not fixed
-
-**Problem**: `.unbatched().batched()` pattern corrupts data during loading
-- Training accuracy: 61.74%
-- Validation accuracy: 43.45% (should be ~60%)
-- Train/val gap: 18.29% (overfitting signature)
-
-**Proposed Fix**: Remove unbatch/rebatch pattern, use native WebDataset batching
-
-**Location**: `notebooks/12_loader_webdataset.ipynb` lines 47-52
+### Experiment 2 Configuration
+- **Model:** RandomForestClassifier (n_estimators=100, max_depth=10)
+- **Data:** 1M rows × 187 features (numeric only)
+- **Split:** 80/20 train/validation, stratified
+- **Evaluation:** Accuracy, F1-score (weighted)
+- **Monitoring:** Same as Exp 1
 
 ---
 
-## Future Work
+## Actionable Recommendations
 
-### Phase 2: Column-Oriented Formats
-1. Extract features from CIFAR-10 images
-2. Build Parquet/HDF5/Feather formats
-3. Create loaders for column formats
-4. Compare row vs column across different access patterns
+### For Small-Scale Development (<100K samples)
+→ **Use CSV** (simplicity, debuggability, human-readable)
 
-### Phase 3: Advanced Experiments (Optional)
-1. **Multi-worker scaling**: Test num_workers=1,2,4,8
-2. **Cold cache analysis**: Clear OS cache between runs
-3. **Simulated network storage**: Add artificial latency
-4. **Batch size sensitivity**: Test batch=1,8,32,128,512
-5. **Compression tradeoffs**: Detailed analysis of compression options
-6. **GPU training**: Repeat experiments on GPU hardware
+### For Production Tabular ML (>100K samples)
+→ **Use Parquet** (best overall: 16% faster end-to-end + 2.2× compression + industry standard)
+
+### For Iterative ML Workflows (CV, hyperparameter tuning)
+→ **Use Parquet** (Feather's faster loading negated by 15% training overhead)
+
+### For Data Preprocessing/Exploration (no training)
+→ **Use Feather** (fastest loading + building when training time doesn't matter)
+
+### For Image Pipelines on CPU
+→ **Use CSV manifests** (minimal storage, competitive throughput)
+
+### For GPU Training (predicted, not tested)
+→ **Use optimized formats** (WebDataset for images, Parquet for tabular) as I/O becomes bottleneck
+
+### LMDB is Workload-Dependent
+- **Use for:** Random sampling (RL replay buffers), item-level queries
+- **Avoid for:** Sequential bulk ML training, full-dataset epoch iterations
+
+---
+
+## Performance Metrics Collected
+
+### Build Metrics
+- Build time (seconds)
+- Storage size (MB: data size vs disk size)
+- Compression ratio (vs CSV baseline)
+- File count
+
+### Runtime Metrics
+- **Loading:** Time to load train/val data (seconds)
+- **Throughput:** Samples/second during training
+- **Epoch time:** Seconds per training epoch
+- **CPU utilization:** % (multi-core aggregate)
+- **Memory usage:** Peak RSS in MB
+- **Disk I/O:** Read/write MB/s
+
+### Model Metrics
+- Training accuracy (%)
+- Validation accuracy (%)
+- F1-score (for tabular only)
 
 ---
 
@@ -305,10 +284,10 @@ If you use this work, please cite:
 
 ```bibtex
 @misc{formatmatters2025,
-  title={Format Matters: A Systems Characterization of Data Storage Formats for ML Training},
-  author={Your Name},
+  title={Format Matters: An Empirical Study of Data Storage Format Impact on Machine Learning Training Pipelines},
+  author={Your Names},
   year={2025},
-  howpublished={\url{https://github.com/yourusername/format-matters}}
+  howpublished={Systems for Machine Learning (SysML)}
 }
 ```
 
@@ -316,12 +295,13 @@ If you use this work, please cite:
 
 ## References
 
-- [WebDataset Documentation](https://github.com/webdataset/webdataset)
+- [PyTorch Documentation](https://pytorch.org/docs/stable/data.html)
+- [WebDataset GitHub](https://github.com/webdataset/webdataset)
 - [TFRecord Format Guide](https://www.tensorflow.org/tutorials/load_data/tfrecord)
 - [LMDB Documentation](https://lmdb.readthedocs.io/)
 - [Apache Parquet Format](https://parquet.apache.org/)
-- [HDF5 Documentation](https://www.hdfgroup.org/solutions/hdf5/)
-- [PyTorch DataLoader Best Practices](https://pytorch.org/docs/stable/data.html)
+- [Apache Arrow Documentation](https://arrow.apache.org/)
+- [Kaggle: American Express Default Prediction](https://www.kaggle.com/competitions/amex-default-prediction)
 
 ---
 
@@ -331,4 +311,9 @@ MIT License - See LICENSE file for details
 
 ## Contact
 
-For questions or issues, please open a GitHub issue or contact the authors.
+For questions or issues, please open a GitHub issue.
+
+---
+
+**Last Updated:** December 2025
+**Status:** All experiments complete, paper published
