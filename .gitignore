@@ -1,0 +1,73 @@
+# Python virtual environments
+experiments/.venv/
+experiments/venv/
+experiments/env/
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data directories (large files)
+experiments/data/
+experiments/data/raw/
+experiments/data/built/
+experiments/data_archive_1126/
+experiments/runs/
+data/
+runs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+*~
+nul
+
+# Node modules (if any)
+node_modules/
+
+# Environment files (may contain secrets)
+.env
+.env.local
+*.pem
+*.key
+
+# Backup files
+backups/
+backups_*/
+*.backup
+
+
+docs/
+.claude/
+claude.rules
+papers/*.md
+papers/*.tex
+

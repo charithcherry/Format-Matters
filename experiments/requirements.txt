@@ -1,0 +1,41 @@
+# Format Matters - Unified Requirements
+# Install with: pip install -r requirements.txt
+
+# PyTorch and Vision (Experiment 1)
+torch==2.8.0
+torchvision==0.23.0
+
+# Data Processing
+numpy==1.26.4
+pandas==2.2.2
+pyarrow==16.1.0
+
+# Machine Learning
+scikit-learn>=1.3.0
+
+# Image Processing
+Pillow==10.3.0
+
+# Storage Formats
+webdataset==0.2.86
+tfrecord==1.14.6
+lmdb==1.5.1
+msgpack>=1.0.0
+
+# Compression
+zstandard
+lz4
+
+# Visualization
+matplotlib==3.8.4
+seaborn>=0.12.0
+
+# System Monitoring
+psutil==5.9.8
+
+# Utilities
+tqdm==4.66.4
+
+# Jupyter (Development)
+jupyter==1.0.0
+notebook==7.2.0
